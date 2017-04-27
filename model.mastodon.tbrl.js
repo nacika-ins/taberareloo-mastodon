@@ -92,8 +92,7 @@
     post : function (ps) {
       var self = this;
 
-      var urlReplacePromise = Promise.resolve(null);
-      var promise = urlReplacePromise
+      var promise = Promise.resolve(null)
         .then(function () {
           return new Promise(function(resolve, reject) {
               if (ps.itemUrl == ps.pageUrl) {
@@ -104,66 +103,66 @@
                   resolve(ps);
                 });
               } else {
-                request("https://mstdn.to?url=" + encodeURIComponent(ps.itemUrl), {
-                  responseType : 'json'
-                }).then(function (res) {
-                  ps.itemUrl = JSON.parse(res.response).url;
-                  resolve(ps);
-                }).then(function (ps) {
+                if (ps.type === 'photo') {
                   request("https://mstdn.to?url=" + encodeURIComponent(ps.pageUrl), {
-                    method       : 'POST'
+                      method       : 'POST'
+                    }).then(function (res) {
+                      ps.pageUrl = JSON.parse(res.response).url;
+                      resolve(ps);
+                    })
+                } else {
+                  request("https://mstdn.to?url=" + encodeURIComponent(ps.itemUrl), {
+                    responseType : 'json'
                   }).then(function (res) {
-                    ps.pageUrl = JSON.parse(res.response).url;
-                    resolve(ps);
-                  })
-                });
+                    ps.itemUrl = JSON.parse(res.response).url;
+                  }).then(function (ps) {
+                    request("https://mstdn.to?url=" + encodeURIComponent(ps.pageUrl), {
+                      method       : 'POST'
+                    }).then(function (res) {
+                      ps.pageUrl = JSON.parse(res.response).url;
+                      resolve(ps);
+                    })
+                  });
+                }
               }
             });
         })
         .then(function (ps) {
+          return new Promise(function(resolve, reject) {
+            var status = self.createStatus(ps);
+            var content = update({}, self.defaults);
+            update(content, {
+              in_reply_to_id : null,
+              media_ids      : [],
+              status         : status.status
+            });
 
-          var status = self.createStatus(ps);
+            if (!content.spoiler_text) {
+              content.spoiler_text = status.spoiler;
+            }
 
-          var content = update({}, self.defaults);
-          update(content, {
-            in_reply_to_id : null,
-            media_ids      : [],
-            status         : status.status
+            if (RegExp("(^|\\s)#?NSFW(\\s|$)", "g").test(content.spoiler_text + content.status)) {
+              content.sensitive = true;
+            }
+
+            if (ps.type === 'photo') {
+              promise = (
+                ps.file ? Promise.resolve(ps.file) : download(ps.itemUrl).then(function (entry) {
+                  return getFileFromEntry(entry);
+                })
+              ).then(function (file) {
+                return self.upload(file).then(function (json) {
+                  content.media_ids.push(json.id);
+                  resolve(content);
+                });
+              });
+            } else {
+              resolve(content);
+            }
           });
-
-          if (!content.spoiler_text) {
-            content.spoiler_text = status.spoiler;
-          }
-
-          if (RegExp("(^|\\s)#?NSFW(\\s|$)", "g").test(content.spoiler_text + content.status)) {
-            content.sensitive = true;
-          }
-
-          return Promise.resolve(content);
-
         });
-
-      if (ps.type === 'photo') {
-        promise = (
-          ps.file ? Promise.resolve(ps.file) : download(ps.itemUrl).then(function (entry) {
-            return getFileFromEntry(entry);
-          })
-        ).then(function (file) {
-          return self.upload(file).then(function (json) {
-            content.media_ids.push(json.id);
-            return content;
-          });
-        });
-      }
 
       return promise
-        .then(function(content) {
-          var promise = Promise.resolve(content);
-          console.log("ccccccccccccccccc");
-          debugger;
-
-          return promise;
-        })
         .then(function (content) {
         return self.getAccessToken().then(function (token) {
           if (!content.visibility) {
