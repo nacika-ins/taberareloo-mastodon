@@ -92,24 +92,57 @@
     post : function (ps) {
       var self = this;
 
-      var status = self.createStatus(ps);
+      var urlReplacePromise = Promise.resolve(null);
+      var promise = urlReplacePromise
+        .then(function () {
+          return new Promise(function(resolve, reject) {
+              if (ps.itemUrl == ps.pageUrl) {
+                request("https://mstdn.to?url=" + encodeURIComponent(ps.itemUrl), {
+                  method       : 'POST',
+                }).then(function (res) {
+                  ps.itemUrl = ps.pageUrl = JSON.parse(res.response).url;
+                  resolve(ps);
+                });
+              } else {
+                request("https://mstdn.to?url=" + encodeURIComponent(ps.itemUrl), {
+                  responseType : 'json'
+                }).then(function (res) {
+                  ps.itemUrl = JSON.parse(res.response).url;
+                  resolve(ps);
+                }).then(function (ps) {
+                  request("https://mstdn.to?url=" + encodeURIComponent(ps.pageUrl), {
+                    method       : 'POST'
+                  }).then(function (res) {
+                    ps.pageUrl = JSON.parse(res.response).url;
+                    resolve(ps);
+                  })
+                });
+              }
+            });
+        })
+        .then(function (ps) {
 
-      var content = update({}, self.defaults);
-      update(content, {
-        in_reply_to_id : null,
-        media_ids      : [],
-        status         : status.status
-      });
+          var status = self.createStatus(ps);
 
-      if (!content.spoiler_text) {
-        content.spoiler_text = status.spoiler;
-      }
+          var content = update({}, self.defaults);
+          update(content, {
+            in_reply_to_id : null,
+            media_ids      : [],
+            status         : status.status
+          });
 
-      if (RegExp("(^|\\s)#?NSFW(\\s|$)", "g").test(content.spoiler_text + content.status)) {
-        content.sensitive = true;
-      }
+          if (!content.spoiler_text) {
+            content.spoiler_text = status.spoiler;
+          }
 
-      var promise = Promise.resolve(content);
+          if (RegExp("(^|\\s)#?NSFW(\\s|$)", "g").test(content.spoiler_text + content.status)) {
+            content.sensitive = true;
+          }
+
+          return Promise.resolve(content);
+
+        });
+
       if (ps.type === 'photo') {
         promise = (
           ps.file ? Promise.resolve(ps.file) : download(ps.itemUrl).then(function (entry) {
@@ -123,7 +156,15 @@
         });
       }
 
-      return promise.then(function (content) {
+      return promise
+        .then(function(content) {
+          var promise = Promise.resolve(content);
+          console.log("ccccccccccccccccc");
+          debugger;
+
+          return promise;
+        })
+        .then(function (content) {
         return self.getAccessToken().then(function (token) {
           if (!content.visibility) {
             content.visibility = token.privacy;
@@ -233,9 +274,5 @@
     visibility   : ""     // "public", "unlisted", "private", "direct", or "" for your default
   });
 */
-  register('Octodon', 'https://octodon.social');
-  register('MSTDN.JP', 'https://mstdn.jp');
-  register('Pawoo', 'https://pawoo.net', {
-    sensitive : true
-  });
+  register('oransns', 'https://oransns.com');
 })();
